@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>Online GitHub Repository Creator from Local Folders</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+     <!-- Compiled and minified CSS -->
+  	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.6/css/materialize.min.css"/>
+	 <!-- Compiled and minified JavaScript -->
+  	 <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.6/js/materialize.min.js"></script>
+
+<style>
+
+</style>
+</head>
+<body>
+
+
+ <nav>
+        <div class="nav-wrapper #e3f2fd blue lighten-5">
+         <div class="container">
+            <a href="{!URLFOR($Site.Prefix+'/apex/RPLR_Home')}" class="brand-logo"></a>
+            <a href="#" data-activates="mobile-demo" class="button-collapse"><i class="material-icons">menu</i></a>
+            <ul class="right hide-on-med-and-down">
+            <div>
+
+            </div>
+            </ul>
+          
+            </ul>
+            </div>
+        </div>
+    </nav>
+
+<div class="container">
+
+<div id="info">
+    <h1>Create GitHub Repo</h1>
+    <div class="card-panel #e3f2fd blue lighten-5">
+    <p>Attach your source code, fill in the information into the fields below and select submit.</p>
+    </div>
+</div>
+
+
+  <div id="side">
+  <div class="card-panel #e3f2fd blue lighten-5">
+  <form id="githubForm" onsubmit="return false;">
+    <input type="file" name="folder" id="folder" webkitdirectory directory required />
+    <br></br>
+    <input type="text" name="username" id="username" placeholder="GitHub Username" required />
+    <input type="password" name="password" id="password" placeholder="GitHub Password" required />
+    <input type="text" name="name" id="name" placeholder="Repo Name" required />
+    <input type="text" name="description" id="description" placeholder="Repo Description" required />
+    <br></br>
+    <input type="submit" id="submit" <a class="waves-effect waves-light btn" value="Submit to GitHub"/>
+  </form>
+  </div>
+  </div>
+  <div id="results"></div>
+</div>
+
+</div>
+
+<script type="text/javascript" src="http://techslides.com/demos/image-browser/jquery-2.1.1.min.js"></script>
+<script>
+
+var folderfiles = [];
+var auth, authid, token, repourl, curl;
+
+var folder = document.getElementById("folder");
+
+//process files
+folder.addEventListener("change", function (e) {
+	var files = e.target.files;
+    for(i=0; i<files.length; i++) {
+    	var file = files[i];
+        folderfiles.push(file);
+    }
+}, false);
+
+
+$('#submit').click(function(){
+    if($("form")[0].checkValidity()) {
+
+	    var username = $("#username").val();
+	    var password = $("#password").val();
+	    var name = $("#name").val();
+	    var description = $("#description").val();
+
+	    auth = btoa(username+':'+password);
+
+	    $("#results").text("Authenticating...");
+
+		$.ajax({ 
+		    url: 'https://api.github.com/authorizations',
+		    type: 'POST',
+		    beforeSend: function(xhr) { 
+		        xhr.setRequestHeader("Authorization", "Basic " + auth); 
+		    },
+		    data: '{"scopes":["repo"],"note":"Create Repo with Ajax"}'
+		}).done(function(response) {
+			authid = response.id;
+			token = response.token;
+		    $("#results").text("Authenticated.");
+		    postrepo(name,description);
+		}).error(function(err) {
+		    $("#results").text("Authorization Failed. Check console log.");
+		    console.log(err);
+		});
+
+    } else {
+	    $("#results").text("Please fill out the form.");
+	}
+});
+
+function postrepo(name,description){
+
+	$("#results").text("Creating GitHub Repository.");
+
+	var postdata = '{"name":"'+name+'","description":"'+description+'","auto_init":true}';
+
+	$.ajax({ 
+		url: 'https://api.github.com/user/repos',
+		type: 'POST',
+		beforeSend: function(xhr) { 
+			xhr.setRequestHeader("Authorization", "token " + token); 
+		},
+		data: postdata
+	}).done(function(response) {
+		curl = response.contents_url;
+		repourl = response.html_url;
+		$("#results").text("Created Repository.");
+		postfiles(curl);
+	}).error(function(err) {
+		$("#results").text("Repo Creation Failed. Check console log.");
+		console.log(err);
+	});
+
+}
+
+function postfiles(){
+
+  $("#results").text("Uploading Files to GitHub Repository. "+folderfiles.length+" files left to upload.");
+
+  if(folderfiles.length>0){
+
+	var f = folderfiles.pop();
+
+	var filename = f.webkitRelativePath;
+	var filemessage = "uploading a file";
+
+	var reader = new FileReader();
+
+	reader.onload = function(e) {
+
+		var filecontent = reader.result;
+		//var basecontent = btoa(filecontent);
+		var basecontent = btoa(unescape(encodeURIComponent(filecontent)));
+		var apiurl = curl.replace('{+path}',filename);
+		var filedata = '{"message":"'+filemessage+'","content":"'+basecontent+'"}';
+
+			$.ajax({ 
+			    url: apiurl,
+			    type: 'PUT',
+			    beforeSend: function(xhr) { 
+			        xhr.setRequestHeader("Authorization", "token " + token);
+			    },
+			    data: filedata
+			}).done(function(response) {
+				$("#results").text("Uploading...");
+				postfiles();
+			}).error(function(err) {
+				$("#results").text("File Upload Failed.");
+				console.log(err);
+				postfiles();
+			});
+
+	}
+
+	reader.readAsText(f,"UTF-8");
+
+  } else {
+	delauth();
+  }
+
+}
+
+function delauth(){
+	$.ajax({ 
+		url: 'https://api.github.com/authorizations/'+authid,
+		type: 'DELETE',
+		beforeSend: function(xhr) { 
+			xhr.setRequestHeader("Authorization", "Basic " + auth); 
+		}
+	});
+
+	var htmlcode = 'Finished. Check it out: <a href="'+repourl+'">'+repourl+'</a>';
+	$("#results").html(htmlcode);
+}
+
+</script>
+</body>
+</html>
+
+
+
+</body>
+</html>
